@@ -1,1 +1,1 @@
-![Homestead Simulator](assets/Simulator.png)
+![Homestead Simulator](assets/simulator.png)
