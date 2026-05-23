@@ -1,4 +1,5 @@
 const CROP_OPTIONS = ['corn', 'tomato', 'potato', 'beans', 'wheat']
+const ANIMAL_OPTIONS = ['cow', 'goat', 'sheep', 'chicken', 'pig']
 
 function SliderField({ label, value, min, max, step = 1, unit = '', onChange }) {
   return (
@@ -30,7 +31,7 @@ function Section({ title, children }) {
   )
 }
 
-export function ScenarioPanel({ inputs, setInput }) {
+export function ScenarioPanel({ inputs, setInput, setCropField, addCrop, removeCrop, setCattleField, addCattle, removeCattle }) {
   return (
     <div>
       <div className="mb-6">
@@ -66,33 +67,88 @@ export function ScenarioPanel({ inputs, setInput }) {
       </Section>
 
       <Section title="Crops">
-        <div className="mb-4">
-          <span className="text-sm text-gray-400 block mb-1.5">Crop type</span>
-          <select
-            value={inputs.crops.crop}
-            onChange={e => setInput('crops', 'crop', e.target.value)}
-            className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-green-500 cursor-pointer"
-          >
-            {CROP_OPTIONS.map(c => (
-              <option key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</option>
-            ))}
-          </select>
-        </div>
-        <SliderField label="Land area" value={inputs.crops.land_acres}
-          min={0.5} max={20} step={0.5} unit="acres"
-          onChange={v => setInput('crops', 'land_acres', v)} />
-        <SliderField label="Days in season" value={inputs.crops.days_in_season}
-          min={1} max={150} step={1} unit="days"
-          onChange={v => setInput('crops', 'days_in_season', v)} />
+        {inputs.crops.map((crop, i) => (
+          <div key={i} className="mb-4 border border-gray-700/60 rounded-xl p-3">
+            <div className="flex justify-between items-center mb-3">
+              <span className="text-xs font-semibold text-gray-300 uppercase tracking-wide">
+                Crop {i + 1}
+              </span>
+              {inputs.crops.length > 1 && (
+                <button
+                  onClick={() => removeCrop(i)}
+                  className="text-xs text-red-400 hover:text-red-300 transition-colors"
+                >
+                  Remove
+                </button>
+              )}
+            </div>
+            <div className="mb-3">
+              <span className="text-sm text-gray-400 block mb-1.5">Type</span>
+              <select
+                value={crop.crop}
+                onChange={e => setCropField(i, 'crop', e.target.value)}
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-green-500 cursor-pointer"
+              >
+                {CROP_OPTIONS.map(c => (
+                  <option key={c} value={c}>{c.charAt(0).toUpperCase() + c.slice(1)}</option>
+                ))}
+              </select>
+            </div>
+            <SliderField label="Land area" value={crop.land_acres}
+              min={0.5} max={20} step={0.5} unit="acres"
+              onChange={v => setCropField(i, 'land_acres', v)} />
+            <SliderField label="Days in season" value={crop.days_in_season}
+              min={1} max={150} step={1} unit="days"
+              onChange={v => setCropField(i, 'days_in_season', v)} />
+          </div>
+        ))}
+        <button
+          onClick={addCrop}
+          className="w-full py-2 text-sm text-green-400 border border-dashed border-green-400/40 rounded-lg hover:bg-green-400/5 transition-colors"
+        >
+          + Add crop
+        </button>
       </Section>
 
-      <Section title="Cattle">
-        <SliderField label="Beef cattle" value={inputs.cattle.beef_head}
-          min={0} max={30} step={1} unit="head"
-          onChange={v => setInput('cattle', 'beef_head', v)} />
-        <SliderField label="Dairy cows" value={inputs.cattle.dairy_cows}
-          min={0} max={15} step={1} unit="cows"
-          onChange={v => setInput('cattle', 'dairy_cows', v)} />
+      <Section title="Livestock">
+        {inputs.cattle.map((entry, i) => (
+          <div key={i} className="mb-4 border border-gray-700/60 rounded-xl p-3">
+            <div className="flex justify-between items-center mb-3">
+              <span className="text-xs font-semibold text-gray-300 uppercase tracking-wide">
+                Livestock {i + 1}
+              </span>
+              {inputs.cattle.length > 1 && (
+                <button
+                  onClick={() => removeCattle(i)}
+                  className="text-xs text-red-400 hover:text-red-300 transition-colors"
+                >
+                  Remove
+                </button>
+              )}
+            </div>
+            <div className="mb-3">
+              <span className="text-sm text-gray-400 block mb-1.5">Species</span>
+              <select
+                value={entry.animal}
+                onChange={e => setCattleField(i, 'animal', e.target.value)}
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-green-500 cursor-pointer"
+              >
+                {ANIMAL_OPTIONS.map(a => (
+                  <option key={a} value={a}>{a.charAt(0).toUpperCase() + a.slice(1)}</option>
+                ))}
+              </select>
+            </div>
+            <SliderField label="Count" value={entry.count}
+              min={0} max={50} step={1} unit="head"
+              onChange={v => setCattleField(i, 'count', v)} />
+          </div>
+        ))}
+        <button
+          onClick={addCattle}
+          className="w-full py-2 text-sm text-green-400 border border-dashed border-green-400/40 rounded-lg hover:bg-green-400/5 transition-colors"
+        >
+          + Add livestock
+        </button>
       </Section>
 
       <Section title="Water">

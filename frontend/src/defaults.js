@@ -10,15 +10,12 @@ export const DEFAULT_INPUTS = {
     panel_area_m2: 40,
     house_sqft: 2000,
   },
-  crops: {
-    crop: 'corn',
-    land_acres: 2,
-    days_in_season: 60,
-  },
-  cattle: {
-    beef_head: 2,
-    dairy_cows: 1,
-  },
+  crops: [
+    { crop: 'corn', land_acres: 2, days_in_season: 60 },
+  ],
+  cattle: [
+    { animal: 'cow', count: 2 },
+  ],
   water: {
     household_persons: 4,
     irrigated_area_m2: 2000,

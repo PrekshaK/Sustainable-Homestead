@@ -1,3 +1,4 @@
+from enum import Enum
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
@@ -139,16 +140,24 @@ def simulate_crops(req: CropsRequest) -> CropsResponse:
 
 # ── Cattle ───────────────────────────────────────────────────────────────────
 
+class AnimalType(str, Enum):
+    cow = "cow"
+    goat = "goat"
+    sheep = "sheep"
+    chicken = "chicken"
+    pig = "pig"
+
+
+class CattleEntry(BaseModel):
+    animal: AnimalType
+    count: int = Field(..., ge=0)
+
+
 class CattleRequest(BaseModel):
-    beef_head: int = Field(..., ge=0)
-    dairy_cows: int = Field(..., ge=0)
-    avg_beef_weight_kg: float = Field(500.0, gt=0)
-    avg_dairy_weight_kg: float = Field(600.0, gt=0)
-    slaughter_weight_kg: float = Field(500.0, gt=0)
-    turnover_rate: float = Field(1.0, gt=0)
+    herd: list[CattleEntry]
 
     model_config = {"json_schema_extra": {"example": {
-        "beef_head": 2, "dairy_cows": 1,
+        "herd": [{"animal": "beef", "count": 2}, {"animal": "dairy", "count": 1}],
     }}}
 
 
@@ -159,18 +168,14 @@ class CattleResponse(BaseModel):
     milk_liters_day: float
     meat_kg_day: float
     feed_required_kg_day: float
+    water_liters_day: float
     kcal_day: float
 
 
 @app.post("/simulate/cattle", response_model=CattleResponse)
 def simulate_cattle(req: CattleRequest) -> CattleResponse:
     r = ca.simulate_day(ca.CattleInputs(
-        beef_head=req.beef_head,
-        dairy_cows=req.dairy_cows,
-        avg_beef_weight_kg=req.avg_beef_weight_kg,
-        avg_dairy_weight_kg=req.avg_dairy_weight_kg,
-        slaughter_weight_kg=req.slaughter_weight_kg,
-        turnover_rate=req.turnover_rate,
+        herd=[(e.animal.value, e.count) for e in req.herd]
     ))
     return CattleResponse(**r.__dict__)
 
@@ -180,8 +185,7 @@ def simulate_cattle(req: CattleRequest) -> CattleResponse:
 class WaterRequest(BaseModel):
     rainfall_mm: float = Field(..., ge=0)
     household_persons: int = Field(..., ge=1)
-    beef_head: int = Field(..., ge=0)
-    dairy_cows: int = Field(..., ge=0)
+    livestock_liters_day: float = Field(0.0, ge=0)
     irrigated_area_m2: float = Field(..., ge=0)
     crop_et_mm: float = Field(..., ge=0)
     storage_liters: float = Field(..., ge=0)
@@ -190,7 +194,7 @@ class WaterRequest(BaseModel):
 
     model_config = {"json_schema_extra": {"example": {
         "rainfall_mm": 5.0, "household_persons": 4,
-        "beef_head": 2, "dairy_cows": 1,
+        "livestock_liters_day": 170.0,
         "irrigated_area_m2": 2000, "crop_et_mm": 8.0,
         "storage_liters": 10000,
     }}}
@@ -213,8 +217,7 @@ def simulate_water(req: WaterRequest) -> WaterResponse:
     r = wt.simulate_day(wt.WaterInputs(
         rainfall_mm=req.rainfall_mm,
         household_persons=req.household_persons,
-        beef_head=req.beef_head,
-        dairy_cows=req.dairy_cows,
+        livestock_liters_day=req.livestock_liters_day,
         irrigated_area_m2=req.irrigated_area_m2,
         crop_et_mm=req.crop_et_mm,
         storage_liters=req.storage_liters,
@@ -252,11 +255,6 @@ class CropsBlock(BaseModel):
     days_in_season: int = Field(..., ge=1, le=180)
 
 
-class CattleBlock(BaseModel):
-    beef_head: int = Field(..., ge=0)
-    dairy_cows: int = Field(..., ge=0)
-
-
 class WaterBlock(BaseModel):
     household_persons: int = Field(..., ge=1)
     irrigated_area_m2: float = Field(..., ge=0)
@@ -268,8 +266,8 @@ class FullDayRequest(BaseModel):
     weather: WeatherBlock
     solar: SolarBlock
     digestor: DigestorBlock = DigestorBlock()
-    crops: CropsBlock
-    cattle: CattleBlock
+    crops: list[CropsBlock]
+    cattle: list[CattleEntry]
     water: WaterBlock
 
     model_config = {"json_schema_extra": {"example": {
@@ -277,8 +275,8 @@ class FullDayRequest(BaseModel):
                     "temp_max_c": 35, "temp_min_c": 25,
                     "rainfall_mm": 3.0, "peak_sun_hours": 6.0},
         "solar": {"panel_area_m2": 40, "house_sqft": 2000},
-        "crops": {"crop": "corn", "land_acres": 2.0, "days_in_season": 60},
-        "cattle": {"beef_head": 2, "dairy_cows": 1},
+        "crops": [{"crop": "corn", "land_acres": 2.0, "days_in_season": 60}],
+        "cattle": [{"animal": "beef", "count": 2}, {"animal": "dairy", "count": 1}],
         "water": {"household_persons": 4, "irrigated_area_m2": 2000,
                   "storage_liters": 10000},
     }}}
@@ -318,8 +316,7 @@ def simulate_full(req: FullDayRequest) -> FullDayResponse:
 
     # Cattle first — its manure feeds biogas
     cattle = ca.simulate_day(ca.CattleInputs(
-        beef_head=req.cattle.beef_head,
-        dairy_cows=req.cattle.dairy_cows,
+        herd=[(e.animal.value, e.count) for e in req.cattle]
     ))
 
     # Biogas — wired from cattle output automatically
@@ -331,22 +328,38 @@ def simulate_full(req: FullDayRequest) -> FullDayResponse:
         retention_days=req.digestor.retention_days,
     ))
 
-    # Crops
-    crops = cr.simulate_day(cr.CropInputs(
-        crop=req.crops.crop,
-        land_acres=req.crops.land_acres,
-        rainfall_mm=w.rainfall_mm,
-        temp_max_c=w.temp_max_c,
-        temp_min_c=w.temp_min_c,
-        days_in_season=req.crops.days_in_season,
-    ))
+    # Crops — simulate each then aggregate (area-weighted averages, summed totals)
+    crop_results = [
+        cr.simulate_day(cr.CropInputs(
+            crop=c.crop,
+            land_acres=c.land_acres,
+            rainfall_mm=w.rainfall_mm,
+            temp_max_c=w.temp_max_c,
+            temp_min_c=w.temp_min_c,
+            days_in_season=c.days_in_season,
+        ))
+        for c in req.crops
+    ]
+    total_acres = sum(c.land_acres for c in req.crops)
+
+    def _wavg(field: str) -> float:
+        return sum(getattr(r, field) * c.land_acres for r, c in zip(crop_results, req.crops)) / total_acres
+
+    from sim.models.crops import CropOutputs
+    crops = CropOutputs(
+        eto_mm=round(_wavg('eto_mm'), 3),
+        crop_et_mm=round(_wavg('crop_et_mm'), 3),
+        water_stress=round(_wavg('water_stress'), 4),
+        daily_yield_kg=round(sum(r.daily_yield_kg for r in crop_results), 3),
+        daily_kcal=round(sum(r.daily_kcal for r in crop_results), 1),
+        water_deficit_mm=round(_wavg('water_deficit_mm'), 3),
+    )
 
     # Water — crop_et_mm wired from crops output automatically
     water = wt.simulate_day(wt.WaterInputs(
         rainfall_mm=w.rainfall_mm,
         household_persons=req.water.household_persons,
-        beef_head=req.cattle.beef_head,
-        dairy_cows=req.cattle.dairy_cows,
+        livestock_liters_day=cattle.water_liters_day,
         irrigated_area_m2=req.water.irrigated_area_m2,
         crop_et_mm=crops.crop_et_mm,
         storage_liters=req.water.storage_liters,

@@ -1,131 +1,76 @@
 from dataclasses import dataclass
+from typing import List, Tuple
 
-# Manure output as fraction of body weight (wet basis)
-_MANURE_FRAC_OF_BW = 0.054        # ~5.4% BW/day; USDA-NRCS value for beef cattle
-_DAIRY_MANURE_FRAC_OF_BW = 0.092  # dairy cows produce more due to higher feed intake
-
-# Volatile solids as fraction of wet manure mass
-# Cattle manure VS fraction: ~10% (wet basis); differs from "mixed organics" default in biogas.py
-CATTLE_VS_FRACTION = 0.10
-
-# Methane yield for cattle manure (m³ CH4 / kg VS) — lower than mixed organics
-# Use this when wiring cattle → biogas instead of biogas.py default (0.30)
-CATTLE_SPECIFIC_YIELD_M3_PER_KG_VS = 0.22
-
-# Dry matter intake as fraction of body weight
-_DMI_FRAC = 0.025
-
-# Dairy production
-_MILK_LITERS_PER_COW_DAY = 22.0   # modest homestead herd (Holstein avg is ~30L, grazed lower)
 _MILK_KCAL_PER_LITER = 610.0
 
-# Meat: dressing percentage (carcass / live weight)
-_DRESSING_PCT = 0.60
-
-# Caloric density of beef carcass (kcal / kg)
-_BEEF_KCAL_PER_KG = 2500.0
+# Per-species biophysical constants
+# bw: average body weight (kg), manure: manure fraction of BW/day,
+# vs: volatile solids fraction of wet manure, dmi: dry matter intake fraction of BW,
+# milk: milk output (L/day/animal), slaughter: slaughter live weight (kg),
+# dress: dressing percentage, turnover: slaughter cycles/year,
+# meat_kcal: kcal/kg carcass, egg_kcal: kcal/animal/day from eggs, water_L: water demand (L/day)
+_SP: dict = {
+    'cow':     dict(bw=500, manure=0.054, vs=0.10, dmi=0.025, milk=0,    slaughter=500, dress=0.60, turnover=1.0, meat_kcal=2500, egg_kcal=0,  water_L=40),
+    'goat':    dict(bw=60,  manure=0.050, vs=0.10, dmi=0.030, milk=2.0,  slaughter=30,  dress=0.48, turnover=1.0, meat_kcal=1090, egg_kcal=0,  water_L=8),
+    'sheep':   dict(bw=70,  manure=0.045, vs=0.10, dmi=0.025, milk=0.5,  slaughter=35,  dress=0.50, turnover=1.0, meat_kcal=1422, egg_kcal=0,  water_L=5),
+    'chicken': dict(bw=1.8, manure=0.072, vs=0.15, dmi=0.030, milk=0,    slaughter=2.0, dress=0.72, turnover=2.0, meat_kcal=1650, egg_kcal=70, water_L=0.3),
+    'pig':     dict(bw=100, manure=0.050, vs=0.12, dmi=0.030, milk=0,    slaughter=100, dress=0.72, turnover=2.5, meat_kcal=2750, egg_kcal=0,  water_L=15),
+}
 
 
 @dataclass
 class CattleInputs:
-    beef_head: int                       # number of beef cattle
-    dairy_cows: int                      # number of dairy cows
-    avg_beef_weight_kg: float = 500.0    # average live weight, beef
-    avg_dairy_weight_kg: float = 600.0   # average live weight, dairy
-    slaughter_weight_kg: float = 500.0   # target live weight at slaughter
-    turnover_rate: float = 1.0           # slaughter cycles per year (1 = annual)
+    herd: List[Tuple[str, int]]  # list of (species, count)
 
 
 @dataclass
 class CattleOutputs:
-    # Biogas feedstock — wire directly to BiogasInputs
-    manure_kg_day: float        # total wet manure (organic_waste_kg for biogas)
-    vs_fraction: float          # volatile solids fraction (use instead of biogas default)
-    vs_kg_day: float            # volatile solids mass (convenience)
-
-    # Food outputs
-    milk_liters_day: float      # daily milk from dairy cows
-    meat_kg_day: float          # annualised daily meat equivalent (carcass weight)
-
-    # Resource demand
-    feed_required_kg_day: float # total dry matter intake
-
-    # Energy summary
-    kcal_day: float             # total food calories (milk + meat equivalent)
+    manure_kg_day: float
+    vs_fraction: float       # weighted average across all species
+    vs_kg_day: float
+    milk_liters_day: float
+    meat_kg_day: float
+    feed_required_kg_day: float
+    water_liters_day: float
+    kcal_day: float
 
 
 def simulate_day(inputs: CattleInputs) -> CattleOutputs:
-    # --- Manure production ---
-    beef_manure_kg = (
-        inputs.beef_head * inputs.avg_beef_weight_kg * _MANURE_FRAC_OF_BW
-    )
-    dairy_manure_kg = (
-        inputs.dairy_cows * inputs.avg_dairy_weight_kg * _DAIRY_MANURE_FRAC_OF_BW
-    )
-    manure_kg_day = beef_manure_kg + dairy_manure_kg
-    vs_kg_day = manure_kg_day * CATTLE_VS_FRACTION
+    manure_kg_day = 0.0
+    vs_kg_day = 0.0
+    feed_kg_day = 0.0
+    milk_L_day = 0.0
+    meat_kg_day = 0.0
+    meat_kcal_day = 0.0
+    egg_kcal_day = 0.0
+    water_L_day = 0.0
 
-    # --- Feed demand ---
-    feed_required_kg_day = (
-        inputs.beef_head * inputs.avg_beef_weight_kg * _DMI_FRAC
-        + inputs.dairy_cows * inputs.avg_dairy_weight_kg * _DMI_FRAC
-    )
+    for species, count in inputs.herd:
+        if count == 0:
+            continue
+        sp = _SP[species]
+        bw = sp['bw']
+        manure = count * bw * sp['manure']
+        manure_kg_day += manure
+        vs_kg_day += manure * sp['vs']
+        feed_kg_day += count * bw * sp['dmi']
+        milk_L_day += count * sp['milk']
+        animal_meat = count * sp['slaughter'] * sp['dress'] * sp['turnover'] / 365.0
+        meat_kg_day += animal_meat
+        meat_kcal_day += animal_meat * sp['meat_kcal']
+        egg_kcal_day += count * sp['egg_kcal']
+        water_L_day += count * sp['water_L']
 
-    # --- Dairy output ---
-    milk_liters_day = inputs.dairy_cows * _MILK_LITERS_PER_COW_DAY
-
-    # --- Meat output (annualised to a daily rate) ---
-    # Each beef animal reaches slaughter weight once per turnover_rate years
-    carcass_kg_per_animal = inputs.slaughter_weight_kg * _DRESSING_PCT
-    meat_kg_day = (
-        inputs.beef_head * carcass_kg_per_animal * inputs.turnover_rate / 365.0
-    )
-
-    # --- Caloric summary ---
-    milk_kcal = milk_liters_day * _MILK_KCAL_PER_LITER
-    meat_kcal = meat_kg_day * _BEEF_KCAL_PER_KG
-    kcal_day = milk_kcal + meat_kcal
+    avg_vs = vs_kg_day / manure_kg_day if manure_kg_day > 0 else 0.10
+    kcal_day = milk_L_day * _MILK_KCAL_PER_LITER + meat_kcal_day + egg_kcal_day
 
     return CattleOutputs(
         manure_kg_day=round(manure_kg_day, 3),
-        vs_fraction=CATTLE_VS_FRACTION,
+        vs_fraction=round(avg_vs, 4),
         vs_kg_day=round(vs_kg_day, 3),
-        milk_liters_day=round(milk_liters_day, 2),
+        milk_liters_day=round(milk_L_day, 2),
         meat_kg_day=round(meat_kg_day, 3),
-        feed_required_kg_day=round(feed_required_kg_day, 2),
+        feed_required_kg_day=round(feed_kg_day, 2),
+        water_liters_day=round(water_L_day, 1),
         kcal_day=round(kcal_day, 1),
     )
-
-
-if __name__ == "__main__":
-    from sim.models.biogas import BiogasInputs, simulate_day as biogas_day
-
-    scenarios = [
-        ("Minimal homestead — 2 beef, 1 dairy",
-         CattleInputs(beef_head=2, dairy_cows=1)),
-        ("Mid-size — 5 beef, 2 dairy",
-         CattleInputs(beef_head=5, dairy_cows=2)),
-        ("Dairy-focused — 0 beef, 4 dairy",
-         CattleInputs(beef_head=0, dairy_cows=4)),
-        ("Meat-only — 10 beef, 0 dairy",
-         CattleInputs(beef_head=10, dairy_cows=0, avg_beef_weight_kg=450)),
-    ]
-
-    for label, inp in scenarios:
-        out = simulate_day(inp)
-        print(f"=== {label} ===")
-        print(f"  Manure        : {out.manure_kg_day:.1f} kg/day  (VS: {out.vs_kg_day:.2f} kg)")
-        print(f"  Milk          : {out.milk_liters_day:.1f} L/day")
-        print(f"  Meat equiv.   : {out.meat_kg_day:.3f} kg/day  ({out.meat_kg_day * 365:.0f} kg/year)")
-        print(f"  Feed needed   : {out.feed_required_kg_day:.1f} kg DM/day")
-        print(f"  Food energy   : {out.kcal_day:,.0f} kcal/day")
-
-        # Wire into biogas to show the chain
-        bg = biogas_day(BiogasInputs(
-            organic_waste_kg=out.manure_kg_day,
-            temp_c=35,
-            vs_fraction=out.vs_fraction,
-            specific_yield_m3_per_kg_vs=0.22,
-        ))
-        print(f"  → Biogas      : {bg.biogas_m3:.2f} m³/day  ({bg.kwh_equivalent:.1f} kWh)")
-        print()

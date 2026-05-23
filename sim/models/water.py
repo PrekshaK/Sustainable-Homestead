@@ -3,10 +3,6 @@ from dataclasses import dataclass
 # Household water use — homestead-conserved (US avg ~300 L; off-grid target ~120 L)
 _HOUSEHOLD_LITERS_PER_PERSON = 120.0
 
-# Livestock daily water demand
-_BEEF_LITERS_PER_HEAD = 40.0    # grazing beef cattle, temperate climate
-_DAIRY_LITERS_PER_COW = 90.0    # dairy cows need more (lactation + higher intake)
-
 # Rainwater harvesting
 _DEFAULT_ROOF_AREA_M2 = 185.0   # ~2000 sqft house footprint
 _COLLECTION_EFF = 0.80           # gutters + first-flush diverter losses
@@ -20,8 +16,7 @@ _CRITICAL_THRESHOLD = 0.30
 class WaterInputs:
     rainfall_mm: float              # daily rainfall (mm)
     household_persons: int          # people in the household
-    beef_head: int                  # beef cattle count
-    dairy_cows: int                 # dairy cow count
+    livestock_liters_day: float     # total livestock water demand (from cattle model)
     irrigated_area_m2: float        # crop area receiving irrigation (m²)
     crop_et_mm: float               # crop evapotranspiration demand (from crops.py)
     storage_liters: float           # cistern/tank level at start of day (L)
@@ -60,10 +55,7 @@ def simulate_day(inputs: WaterInputs) -> WaterOutputs:
     # --- Demand ---
     household_demand = inputs.household_persons * _HOUSEHOLD_LITERS_PER_PERSON
 
-    livestock_demand = (
-        inputs.beef_head * _BEEF_LITERS_PER_HEAD
-        + inputs.dairy_cows * _DAIRY_LITERS_PER_COW
-    )
+    livestock_demand = inputs.livestock_liters_day
 
     # Irrigation: only the deficit between crop ET and what rainfall already provides
     # max(0, crop_et - rainfall) mm, converted to litres over the irrigated area
