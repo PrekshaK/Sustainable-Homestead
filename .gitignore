@@ -56,3 +56,6 @@ logs/
 
 # Generated data
 data/*.db
+
+# Claude Code
+.claude/scheduled_tasks.lock
